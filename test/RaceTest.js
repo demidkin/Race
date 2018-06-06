@@ -2,14 +2,16 @@
 
 import expectThrow from './helpers/expectThrow';
 
-const BreadCoin = artifacts.require('BreadCoin.sol');
+const Race = artifacts.require('Race.sol');
 
 
 
-contract('BreadCoin', function(accounts) {
+contract('Race', function(accounts) {
 
-    it('test constructor', async function() {
-        const token1 = await BreadCoin.new();
+    it('Test constructor', async function() {
+        const auctionEndDate = new Date(2018, 6, 6, 20, 0);
+        const raceEndDate = new Date(2018, 6, 7, 20, 0);
+        const race = await Race.new(accounts[1], Math.round(auctionEndDate.getTime() / 1000), Math.round(raceEndDate.getTime() / 1000), 8);
     });
     // it('test getCoinName', async function() {
     //     const token2 = await BreadCoin.new();
