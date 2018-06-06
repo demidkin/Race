@@ -10,8 +10,8 @@ contract('Race', function(accounts) {
 
     it('Test constructor', async function() {
         const auctionEndDate = new Date(2018, 6, 6, 20, 0);
-        const raceEndDate = new Date(2018, 6, 7, 20, 0);
-        const race = await Race.new(accounts[1], Math.round(auctionEndDate.getTime() / 1000), Math.round(raceEndDate.getTime() / 1000), 8);
+        const raceStartDate = new Date(2018, 6, 7, 20, 0);
+        const race = await Race.new(accounts[1], Math.round(auctionEndDate.getTime() / 1000), Math.round(raceStartDate.getTime() / 1000), 8);
     });
     // it('test getCoinName', async function() {
     //     const token2 = await BreadCoin.new();

@@ -2,8 +2,8 @@ pragma solidity ^0.4.22; // solhint-disable-line
 
 /*
     ContractStatus:
-        Initializing - контракт создан, нет участников, дата аукциона не прошла
-        Auction - есть участники, дата аукциона не прошла
+        Initializing - контракт создан, нет участников, дата аукциона не прошла, аукцион не начат
+        Auction - дата аукциона не прошла, аукцион начат
         AuctionFault - дата аукциона прошла, не выполнены минимальные условия старта гонки
         (нужно определить) например количество участников, сумма сборов
         PreparationForTheRace - есть участники, дата аукциона прошла, дата гонки не прошла
@@ -13,17 +13,19 @@ pragma solidity ^0.4.22; // solhint-disable-line
 
 contract Race {
     using SafeMath for uint256;
-
+//VARIABLES----------------------------------------------------------------------
     bool contractStoped; //остановка контракта владельцем
-    bool auctionStarted; //
+    bool auctionStarted; //признак что аукцион начат
     bool auctionEnded; // признак что аукцион завершен
     uint maxCar; //Максимальное количество автомобилей в гонке (от 2 до 32)
     address owner; //владелец контракта
     address beneficiary; //получатель выгоды
     uint auctionEndDate; //дата завершения аукциона
-    uint raceEndDate; //дата завершения гонки
-    address[] public highestBidders; //адрес самого выского претендента для кадого автомобиля[порядковый номер автомобиля]
-    uint256[] public highestBids; //самая высокая ставка для кадого автомобиля [порядковый номер автомобиля]
+    uint raceStartDate; //дата завершения гонки
+    uint256 reward; //награда победителя гонок
+    address[] highestBidders; //адрес самого выского претендента для кадого автомобиля[порядковый номер автомобиля]
+    uint256[] highestBids; //самая высокая ставка для кадого автомобиля [порядковый номер автомобиля]
+    uint[] carsPower; // апгрейды автомобилей, до двух знаков после запятой, по умолчанию 10000
     mapping(address => uint256) pendingReturns; //возврат средств участникам аукциона   
 
     enum ContractStatus {
@@ -36,27 +38,32 @@ contract Race {
     }
 //EVENTS----------------------------------------------------------------------  
     event HighestBidIncreased(address sender, uint256 value, uint carIndex); // событие об увеличение максимальной ставки для тачки
-    event AuctionEnded(); // событие о завершении аукциона
+    event AuctionEnded(); // событие об успешном завершении аукциона
+    event AuctionStarted(uint256 reward); // событие о начале аукциона
 //MODIFER---------------------------------------------------------------------  
     modifier auctionInProgress(){
-        require(!auctionEnded);
-        require((getContractStatus() == ContractStatus.Initsialising) || (getContractStatus() == ContractStatus.Auction));
+        require(getContractStatus() == ContractStatus.Auction);
+        _;
+    }
+    modifier auctionInInitsialising(){
+        require(getContractStatus() == ContractStatus.Initsialising);
         _;
     }
 
 //CONSTRUCTOR---------------------------------------------------------------------
-    constructor(address _beneficiary, uint _auctionEndDate, uint _raceEndDate, uint _maxCar) public {
+    constructor(address _beneficiary, uint _auctionEndDate, uint _raceStartDate, uint _maxCar) public {
         require(_auctionEndDate > now);
-        require(_raceEndDate > _auctionEndDate);
+        require(_raceStartDate > _auctionEndDate);
         require((_maxCar >= 2) && (_maxCar <= 32));
         auctionStarted = false;
         contractStoped = false;
         auctionEnded = false;
         auctionEndDate = _auctionEndDate;
-        raceEndDate = _raceEndDate;
+        raceStartDate = _raceStartDate;
         maxCar = _maxCar;
         owner = msg.sender;
         beneficiary = _beneficiary;
+        reward = 0;
         initCars(maxCar);
     }
 
@@ -64,6 +71,7 @@ contract Race {
         for (uint i = 0; i < carsCount; i++){
             highestBidders.push(0);
             highestBids.push(0);
+            carsPower.push(10000);
         }
     }
 
@@ -95,15 +103,25 @@ contract Race {
         public
         payable
     {
-        require((carIndex >= 2) && (carIndex <= 32));
+        require(carIndex < maxCar);
         require(msg.value > highestBids[carIndex]);
         if (highestBids[carIndex] != 0) {
             pendingReturns[highestBidders[carIndex]] = pendingReturns[highestBidders[carIndex]].add(highestBids[carIndex]);
         }
         highestBidders[carIndex] = msg.sender;
         highestBids[carIndex] = msg.value;
-        if (!auctionStarted) auctionStarted = true;
         emit HighestBidIncreased(msg.sender, msg.value, carIndex);
+    }
+
+    //запуск аукциона, перечесление награды
+    function auctionStart()
+        auctionInInitsialising
+        public
+        payable
+    {
+        reward = msg.value;
+        auctionStarted = true;
+        emit AuctionStarted(reward);
     }
 
     //возрат ставки в случае перекупа тачки
@@ -123,11 +141,26 @@ contract Race {
     function auctionEnd() public {
         require(now >= auctionEndDate);
         require(!auctionEnded);
+        require(auctionStarted);
         auctionEnded = true;
+        auctionStarted = false;
         emit AuctionEnded();
         uint256 amount;
         for (uint i = 0; i < maxCar; i++) amount = amount.add(highestBids[i]);
         beneficiary.transfer(amount);
+    }
+    
+    //узнаем максимальную ставку для тачки с индексом carIndex
+    function gethighestBid(uint carIndex) public view returns (uint256){
+        require(carIndex < maxCar);
+        return highestBids[carIndex];
+    }
+
+    //узнаем выиграла ли наша ставка для тачки с индексом carIndex
+    function myBidIsWin(uint carIndex) public view returns (bool){
+        require(carIndex < maxCar);
+        if (highestBidders[carIndex] == msg.sender) return true;
+        return false;
     }
 
 }
@@ -135,10 +168,10 @@ contract Race {
 
 
 //UTILITES==========================================================================================
-/**
- * @title SafeMath
- * @dev Math operations with safety checks that throw on error
- */
+    /**
+    * @title SafeMath
+    * @dev Math operations with safety checks that throw on error
+    */
 library SafeMath {
 
     /**
