@@ -14,10 +14,12 @@ pragma solidity ^0.4.22; // solhint-disable-line
 contract Race {
     using SafeMath for uint256;
 //VARIABLES----------------------------------------------------------------------
-    bool contractStoped; //остановка контракта владельцем
+    bool contractStoped; //остановка контракта
     bool auctionStarted; //признак что аукцион начат
-    bool auctionEnded; // признак что аукцион завершен
+    bool auctionEnded; // признак что аукцион завершен успешно
     uint maxCar; //Максимальное количество автомобилей в гонке (от 2 до 32)
+    uint[] upgradesPower;
+    uint256[] upgradesPrice;
     address owner; //владелец контракта
     address beneficiary; //получатель выгоды
     uint auctionEndDate; //дата завершения аукциона
@@ -26,6 +28,7 @@ contract Race {
     address[] highestBidders; //адрес самого выского претендента для кадого автомобиля[порядковый номер автомобиля]
     uint256[] highestBids; //самая высокая ставка для кадого автомобиля [порядковый номер автомобиля]
     uint[] carsPower; // апгрейды автомобилей, до двух знаков после запятой, по умолчанию 10000
+    uint[] carUpgradePurchased;
     mapping(address => uint256) pendingReturns; //возврат средств участникам аукциона   
 
     enum ContractStatus {
@@ -40,6 +43,7 @@ contract Race {
     event HighestBidIncreased(address sender, uint256 value, uint carIndex); // событие об увеличение максимальной ставки для тачки
     event AuctionEnded(); // событие об успешном завершении аукциона
     event AuctionStarted(uint256 reward); // событие о начале аукциона
+    event AuctionCanceled();
 //MODIFER---------------------------------------------------------------------  
     modifier auctionInProgress(){
         require(getContractStatus() == ContractStatus.Auction);
@@ -48,6 +52,22 @@ contract Race {
     modifier auctionInInitsialising(){
         require(getContractStatus() == ContractStatus.Initsialising);
         _;
+    }
+    modifier auctionNotFault(){
+        require(getContractStatus() != ContractStatus.AuctionFault);
+        _;
+    }
+    modifier auctionFault(){
+        require(getContractStatus() == ContractStatus.AuctionFault);
+        _;
+    }
+    modifier contractIsNormal(){
+        require(getContractStatus() != ContractStatus.Stop);
+        _;
+    }
+    modifier ContractInPreparationForTheRace(){
+        require(getContractStatus() == ContractStatus.PreparationForTheRace);
+        _;       
     }
 
 //CONSTRUCTOR---------------------------------------------------------------------
@@ -65,6 +85,7 @@ contract Race {
         beneficiary = _beneficiary;
         reward = 0;
         initCars(maxCar);
+        initUpgrades();
     }
 
     function initCars(uint carsCount) internal {
@@ -72,22 +93,46 @@ contract Race {
             highestBidders.push(0);
             highestBids.push(0);
             carsPower.push(10000);
+            carUpgradePurchased.push(0);
         }
+    }
+
+    function initUpgrades() internal {
+        //upgrade 1
+        upgradesPower.push(300);
+        upgradesPrice.push(10 finney);
+
+        //upgrade 2
+        upgradesPower.push(400);
+        upgradesPrice.push(15 finney);
+
+        //upgrade 3
+        upgradesPower.push(500);
+        upgradesPrice.push(20 finney);
     }
 
     function getContractStatus() public view returns(ContractStatus){
         if (contractStoped) return ContractStatus.Stop;
         //ContractStatus.Initsialising---------------------------------------------------------------------
-        if ((now <= auctionEndDate) && !auctionStarted && !auctionEnded) return ContractStatus.Initsialising;
-        
-        //ContractStatus.Auction--------------------------------------------------------------------------
-        if ((now <= auctionEndDate) && auctionStarted && !auctionEnded) return ContractStatus.Auction;
+        if ((now < auctionEndDate) && !auctionStarted && !auctionEnded) return ContractStatus.Initsialising;
 
         //ContractStatus.AuctionFault--------------------------------------------------------------------------
+        if ((now >= auctionEndDate) && auctionStarted && !auctionEnded)
+        {
+            uint256 amount;
+            for (uint i = 0; i < maxCar; i++) amount = amount.add(highestBids[i]);
+            //если сумма сборов не превышает награду, считаем аукцион не состоявшимся
+            if (amount <= reward) return ContractStatus.AuctionFault;
+            //если не задействованы все тачки, считаем аукцион не состоявшимся
+            for (uint j = 0; j < maxCar; j++) if (highestBidders[j] == 0) return ContractStatus.AuctionFault;
+        }
         
+        //ContractStatus.Auction--------------------------------------------------------------------------
+        if ((now < auctionEndDate) && auctionStarted && !auctionEnded) return ContractStatus.Auction;
+
 
         //ContractStatus.PreparationForTheRace--------------------------------------------------------------------------
-        
+        if ((now >= auctionEndDate) && auctionEnded && (now < raceStartDate)) return ContractStatus.PreparationForTheRace;
 
         //ContractStatus.RaceIsOver--------------------------------------------------------------------------
         
@@ -96,10 +141,11 @@ contract Race {
         return ContractStatus.Stop;
     }
 
-//FUNCTIONS AUCTION---------------------------------------------------------------------
+//FUNCTIONS AUCTION--------------------------------------------------------------------- 
     //ставка на машину с индексом carIndex
     function bid(uint carIndex)
         auctionInProgress
+        contractIsNormal
         public
         payable
     {
@@ -116,6 +162,7 @@ contract Race {
     //запуск аукциона, перечесление награды
     function auctionStart()
         auctionInInitsialising
+        contractIsNormal
         public
         payable
     {
@@ -125,7 +172,10 @@ contract Race {
     }
 
     //возрат ставки в случае перекупа тачки
-    function withdraw() public returns (bool) {
+    function withdraw()  
+        public 
+        returns (bool) 
+    {
         uint256 amount = pendingReturns[msg.sender];
         if (amount > 0) {
             pendingReturns[msg.sender] = 0;
@@ -138,7 +188,11 @@ contract Race {
     }
 
     //завершщение аукциона, забираем ставки
-    function auctionEnd() public {
+    function auctionEnd() 
+        auctionNotFault 
+        contractIsNormal
+        public 
+    {
         require(now >= auctionEndDate);
         require(!auctionEnded);
         require(auctionStarted);
@@ -163,6 +217,67 @@ contract Race {
         return false;
     }
 
+    //
+    function auctionCancel()
+        auctionFault
+        contractIsNormal
+        public
+    {
+        for (uint i = 0; i < maxCar; i++){
+            if (highestBidders[i] != 0){
+                pendingReturns[highestBidders[i]] = pendingReturns[highestBidders[i]].add(highestBids[i]);
+                highestBidders[i] = 0;
+                highestBids[i] = 0;
+            }
+        }
+        pendingReturns[beneficiary] = pendingReturns[beneficiary].add(reward);
+        reward = 0;
+        auctionStarted = false;
+        auctionEnded = false;
+        contractStoped = true;
+        emit AuctionCanceled();
+    }
+
+//FUNCTIONS Preparation for the Race---------------------------------------------------------------------
+    //узнаем сколько апгрейдов существует всего
+    function getUpgradesCount() public view returns(uint){
+        return upgradesPower.length;
+    }
+    //узнаем стоимость апгрейда с индексом index
+    function getUpgradesPrice(uint index) public view returns(uint256){ 
+        if (index < upgradesPrice.length) return upgradesPrice[index];
+        return 0;
+    }
+    //узнаем мощьность автомобиля с индексом carIndex
+    function getCarPower(uint carIndex) public view returns(uint){
+        if (carIndex < maxCar) return carsPower[carIndex];
+        return 0;
+    }
+    //узнаем сколько апгрейдов установлено на машину с индексом carIndex
+    function getCarUpgrades(uint carIndex) public view returns(uint){
+        if (carIndex < carUpgradePurchased.length) return carUpgradePurchased[carIndex];
+        return 0;
+    }
+
+    //проверка что машина принадлежит "мне"
+    function isMyCar(uint carIndex) public view returns(bool){
+        if (carIndex >= highestBidders.length) return false;
+        if ((highestBidders[carIndex] == msg.sender) && (getContractStatus() != ContractStatus.Auction)) return true;
+        return false;
+    }
+    //покупка апгрейда тачки
+    function upgradeCar(uint carIndex)
+        ContractInPreparationForTheRace
+        public
+        payable
+    {
+        require(isMyCar(carIndex));
+        require(getCarUpgrades(carIndex) < getUpgradesCount());
+        require(msg.value == (upgradesPrice[carUpgradePurchased[carIndex]+1]));
+        carUpgradePurchased[carIndex] += 1;
+        carsPower[carIndex] = carsPower[carIndex].add(upgradesPower[carUpgradePurchased[carIndex]]);
+        pendingReturns[beneficiary] = pendingReturns[beneficiary].add(msg.value);
+    }
 }
 
 
