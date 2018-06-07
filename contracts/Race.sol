@@ -1,4 +1,5 @@
 pragma solidity ^0.4.22; // solhint-disable-line
+import "github.com/oraclize/ethereum-api/blob/master/oraclizeAPI.sol";
 
 /*
     ContractStatus:
@@ -11,13 +12,15 @@ pragma solidity ^0.4.22; // solhint-disable-line
         Stop - остановка контракта владельцем
 */
 
-contract Race {
+contract Race is usingOraclize{
     using SafeMath for uint256;
 //VARIABLES----------------------------------------------------------------------
     bool contractStoped; //остановка контракта
     bool auctionStarted; //признак что аукцион начат
+    bool raceFinished;
     bool auctionEnded; // признак что аукцион завершен успешно
     uint maxCar; //Максимальное количество автомобилей в гонке (от 2 до 32)
+    uint randomNumber;
     uint[] upgradesPower;
     uint256[] upgradesPrice;
     address owner; //владелец контракта
@@ -69,6 +72,10 @@ contract Race {
         require(getContractStatus() == ContractStatus.PreparationForTheRace);
         _;       
     }
+    modifier ContractInRaceIsOver(){
+        require(getContractStatus() == ContractStatus.RaceIsOver);
+        _;       
+    }
 
 //CONSTRUCTOR---------------------------------------------------------------------
     constructor(address _beneficiary, uint _auctionEndDate, uint _raceStartDate, uint _maxCar) public {
@@ -78,6 +85,8 @@ contract Race {
         auctionStarted = false;
         contractStoped = false;
         auctionEnded = false;
+        raceFinished = false;
+        randomNumber = 0;
         auctionEndDate = _auctionEndDate;
         raceStartDate = _raceStartDate;
         maxCar = _maxCar;
@@ -86,6 +95,7 @@ contract Race {
         reward = 0;
         initCars(maxCar);
         initUpgrades();
+        oraclize_setProof(proofType_Ledger);
     }
 
     function initCars(uint carsCount) internal {
@@ -135,7 +145,7 @@ contract Race {
         if ((now >= auctionEndDate) && auctionEnded && (now < raceStartDate)) return ContractStatus.PreparationForTheRace;
 
         //ContractStatus.RaceIsOver--------------------------------------------------------------------------
-        
+        if (auctionEnded && (now >= raceStartDate)) return ContractStatus.RaceIsOver;
 
         //состояние по умолчанию
         return ContractStatus.Stop;
@@ -278,7 +288,53 @@ contract Race {
         carsPower[carIndex] = carsPower[carIndex].add(upgradesPower[carUpgradePurchased[carIndex]]);
         pendingReturns[beneficiary] = pendingReturns[beneficiary].add(msg.value);
     }
-}
+//FUNCTIONS RACE---------------------------------------------------------------------
+    function race()
+        contractIsNormal
+        ContractInRaceIsOver
+        public
+        payable
+    {
+        require(!raceFinished);
+        raceFinished = true;
+        uint N = 7;
+        uint delay = 0;
+        uint callbackGas = 200000;
+        oraclize_newRandomDSQuery(delay, N, callbackGas);
+    }
+
+    function __callback(bytes32 _queryId, string _result, bytes _proof) public
+    { 
+        require(msg.sender == oraclize_cbAddress());
+        
+        if (oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) != 0) {
+            // the proof verification has failed, do we need to take any action here? (depends on the use case)
+            raceFinished = false;
+        } else {
+            uint maxRange = getAllCarsPower(); 
+            randomNumber = uint(sha3(_result)) % maxRange;
+            uint winner = getWinnerCar(randomNumber);
+            pendingReturns[highestBidders[winner]] = pendingReturns[highestBidders[winner]].add(reward);
+            reward = 0;
+        }
+    }
+
+    function getAllCarsPower() internal returns(uint){
+        uint power = 0;
+        for (uint i = 0; i < maxCar; i++){
+            power = power.add(carsPower[i]);
+        }
+        return power;
+    }
+    function getWinnerCar(uint random) internal returns(uint){
+        uint buf = 0;
+        for (int i = 0; i < carMax; i++){
+            buf = buf.add(carsPower[i]);
+            if (random <= buf) return i;
+        }
+        return 1000;
+    }
+} 
 
 
 
