@@ -121,6 +121,14 @@ contract Race is usingOraclize{
         upgradesPrice.push(20 finney);
     }
 
+    function getAuctionEndDate() public view returns(uint){
+        return auctionEndDate;
+    }
+    
+    function getRaceStartDate() public view returns(uint){
+        return raceStartDate;
+    }
+
     function getContractStatus() public view returns(ContractStatus){
         if (contractStoped) return ContractStatus.Stop;
         //ContractStatus.Initsialising---------------------------------------------------------------------
