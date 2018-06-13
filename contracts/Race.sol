@@ -1,5 +1,5 @@
 pragma solidity ^0.4.22; // solhint-disable-line
-import "github.com/oraclize/ethereum-api/blob/master/oraclizeAPI.sol";
+import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
 
 /*
     ContractStatus:
@@ -32,6 +32,7 @@ contract Race is usingOraclize{
     uint256[] highestBids; //самая высокая ставка для кадого автомобиля [порядковый номер автомобиля]
     uint[] carsPower; // апгрейды автомобилей, до двух знаков после запятой, по умолчанию 10000
     uint[] carUpgradePurchased;
+    uint winner;
     mapping(address => uint256) pendingReturns; //возврат средств участникам аукциона   
 
     enum ContractStatus {
@@ -93,6 +94,7 @@ contract Race is usingOraclize{
         owner = msg.sender;
         beneficiary = _beneficiary;
         reward = 0;
+        winner = 1000;
         initCars(maxCar);
         initUpgrades();
         oraclize_setProof(proofType_Ledger);
@@ -124,7 +126,7 @@ contract Race is usingOraclize{
     function getAuctionEndDate() public view returns(uint){
         return auctionEndDate;
     }
-    
+
     function getRaceStartDate() public view returns(uint){
         return raceStartDate;
     }
@@ -158,7 +160,19 @@ contract Race is usingOraclize{
         //состояние по умолчанию
         return ContractStatus.Stop;
     }
+    //какая награда за победу
+    function getRewardValue() public view returns(uint256){
+        return reward;
+    }
+    //какой не выплаченый баланс
+    function getPandingReturnValue() public view returns(uint256){
+        return pendingReturns[msg.sender];
+    }
 
+    //кто победитель, 1000 если победитель не определен
+    function getWinner() public view returns(uint){
+        return winner;
+    }
 //FUNCTIONS AUCTION--------------------------------------------------------------------- 
     //ставка на машину с индексом carIndex
     function bid(uint carIndex)
@@ -321,7 +335,7 @@ contract Race is usingOraclize{
         } else {
             uint maxRange = getAllCarsPower(); 
             randomNumber = uint(sha3(_result)) % maxRange;
-            uint winner = getWinnerCar(randomNumber);
+            winner = getWinnerCar(randomNumber);
             pendingReturns[highestBidders[winner]] = pendingReturns[highestBidders[winner]].add(reward);
             reward = 0;
         }
