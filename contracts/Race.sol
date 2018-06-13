@@ -350,7 +350,7 @@ contract Race is usingOraclize{
     }
     function getWinnerCar(uint random) internal returns(uint){
         uint buf = 0;
-        for (int i = 0; i < carMax; i++){
+        for (uint i = 0; i < maxCar; i++){
             buf = buf.add(carsPower[i]);
             if (random <= buf) return i;
         }
