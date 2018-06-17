@@ -12,5 +12,8 @@
     "ganache-cli": "^6.0.3",
     "truffle": "^4.0.0",
     "zeppelin-solidity": "^1.9.0"
+  },
+  "dependencies": {
+    "solc-js": "^0.4.20-browser.1"
   }
 }
