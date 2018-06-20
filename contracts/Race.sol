@@ -329,10 +329,9 @@ contract Race is usingOraclize{
         payable
     {
         require(!raceFinished);
-        raceFinished = true;
         uint N = 7;
         uint delay = 0;
-        uint callbackGas = 200000;
+        uint callbackGas = 1000000;
         oraclize_newRandomDSQuery(delay, N, callbackGas);
     }
 
@@ -342,7 +341,6 @@ contract Race is usingOraclize{
         
         if (oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) != 0) {
             // the proof verification has failed, do we need to take any action here? (depends on the use case)
-            raceFinished = false;
         } else {
             uint maxRange = getAllCarsPower(); 
             randomNumber = uint(sha3(_result)) % maxRange;
@@ -350,6 +348,7 @@ contract Race is usingOraclize{
             pendingReturns[highestBidders[winner]] = pendingReturns[highestBidders[winner]].add(reward);
             reward = 0;
             Winer(winner, randomNumber);
+            raceFinished = true;
         }
     }
 
