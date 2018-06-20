@@ -1,6 +1,7 @@
-pragma solidity ^0.4.22;
-import "./Oraclize.sol";
-
+//pragma solidity ^0.4.22;
+//import "./Oraclize.sol";
+pragma solidity >=0.4.1 <=0.4.20;
+import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
 /*
     ContractStatus:
         Initializing - контракт создан, нет участников, дата аукциона не прошла, аукцион не начат
@@ -50,6 +51,7 @@ contract Race is usingOraclize{
     event AuctionEnded(); // событие об успешном завершении аукциона
     event AuctionStarted(uint256 reward); // событие о начале аукциона
     event AuctionCanceled();
+    event Winer(uint winner, uint random);
 //MODIFER---------------------------------------------------------------------  
     modifier auctionInProgress(){
         require(getContractStatus() == ContractStatus.Auction);
@@ -178,6 +180,11 @@ contract Race is usingOraclize{
     function getWinner() public view returns(uint){
         return winner;
     }
+
+    //Количество учасников
+    function getMaxCarValue() public view returns(uint){
+        return maxCar;
+    }  
 //FUNCTIONS AUCTION--------------------------------------------------------------------- 
     //ставка на машину с индексом carIndex
     function bid(uint carIndex)
@@ -193,7 +200,7 @@ contract Race is usingOraclize{
         }
         highestBidders[carIndex] = msg.sender;
         highestBids[carIndex] = msg.value;
-        emit HighestBidIncreased(msg.sender, msg.value, carIndex);
+        HighestBidIncreased(msg.sender, msg.value, carIndex);
     }
 
     //запуск аукциона, перечесление награды
@@ -205,7 +212,7 @@ contract Race is usingOraclize{
     {
         reward = msg.value;
         auctionStarted = true;
-        emit AuctionStarted(reward);
+        AuctionStarted(reward);
     }
 
     //возрат ставки в случае перекупа тачки
@@ -234,7 +241,7 @@ contract Race is usingOraclize{
         require(auctionStarted);
         auctionEnded = true;
         auctionStarted = false;
-        emit AuctionEnded();
+        AuctionEnded();
         uint256 amount;
         for (uint i = 0; i < maxCar; i++) amount = amount.add(highestBids[i]);
         beneficiary.transfer(amount);
@@ -270,7 +277,7 @@ contract Race is usingOraclize{
             auctionStarted = false;
             auctionEnded = false;
             contractStoped = true;
-            emit AuctionCanceled();
+            AuctionCanceled();
         }
     }
 
@@ -308,11 +315,11 @@ contract Race is usingOraclize{
         payable
     {
         require(isMyCar(carIndex));
-        require(getCarUpgrades(carIndex) < getUpgradesCount());
-        require(msg.value == (upgradesPrice[carUpgradePurchased[carIndex]+1]));
-        carUpgradePurchased[carIndex] += 1;
+        require((getCarUpgrades(carIndex)) < getUpgradesCount());
+        require(msg.value == (upgradesPrice[carUpgradePurchased[carIndex]]));
         carsPower[carIndex] = carsPower[carIndex].add(upgradesPower[carUpgradePurchased[carIndex]]);
         pendingReturns[beneficiary] = pendingReturns[beneficiary].add(msg.value);
+        carUpgradePurchased[carIndex] += 1;
     }
 //FUNCTIONS RACE---------------------------------------------------------------------
     function race()
@@ -342,6 +349,7 @@ contract Race is usingOraclize{
             winner = getWinnerCar(randomNumber);
             pendingReturns[highestBidders[winner]] = pendingReturns[highestBidders[winner]].add(reward);
             reward = 0;
+            Winer(winner, randomNumber);
         }
     }
 
