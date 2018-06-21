@@ -331,7 +331,7 @@ contract Race is usingOraclize{
         require(!raceFinished);
         uint N = 7;
         uint delay = 0;
-        uint callbackGas = 1000000;
+        uint callbackGas = 250000;
         oraclize_newRandomDSQuery(delay, N, callbackGas);
     }
 
