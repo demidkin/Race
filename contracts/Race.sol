@@ -1,5 +1,3 @@
-//pragma solidity ^0.4.22;
-//import "./Oraclize.sol";
 pragma solidity >=0.4.1 <=0.4.20;
 import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
 /*
@@ -13,7 +11,6 @@ import "github.com/oraclize/ethereum-api/oraclizeAPI.sol";
         Stop - остановка контракта владельцем
         AuctionEnded - аукцион завершен успешно
 */
-//is usingOraclize{
 contract Race is usingOraclize{
     using SafeMath for uint256;
 //VARIABLES----------------------------------------------------------------------
@@ -35,10 +32,13 @@ contract Race is usingOraclize{
     uint[] carsPower; // апгрейды автомобилей, до двух знаков после запятой, по умолчанию 10000
     uint[] carUpgradePurchased;
     uint winner;
+    uint allCarsPower;
+    uint constant CUSTOM_GASLIMIT = 250000; // лимит газа для oriclize.io
+    uint constant CUSTOM_GASPRICE = 4000000000; // цена за газ для oriclize.io
     mapping(address => uint256) pendingReturns; //возврат средств участникам аукциона   
 
     enum ContractStatus {
-        Initsialising, 
+        Initialising, 
         Auction,
         AuctionFault,
         PreparationForTheRace,
@@ -51,14 +51,16 @@ contract Race is usingOraclize{
     event AuctionEnded(); // событие об успешном завершении аукциона
     event AuctionStarted(uint256 reward); // событие о начале аукциона
     event AuctionCanceled();
-    event Winer(uint winner, uint random);
+    event Winer(uint winner, uint random, string oricalize_random);
+    event AllCarsPower(uint allCarsPower);
+    event ProofError();
 //MODIFER---------------------------------------------------------------------  
     modifier auctionInProgress(){
         require(getContractStatus() == ContractStatus.Auction);
         _;
     }
-    modifier auctionInInitsialising(){
-        require(getContractStatus() == ContractStatus.Initsialising);
+    modifier auctionInInitialising(){
+        require(getContractStatus() == ContractStatus.Initialising);
         _;
     }
     // modifier auctionNotFault(){
@@ -101,7 +103,9 @@ contract Race is usingOraclize{
         winner = 1000;
         initCars(maxCar);
         initUpgrades();
+        oraclize_setCustomGasPrice(CUSTOM_GASPRICE);
         oraclize_setProof(proofType_Ledger);
+
     }
 
     function initCars(uint carsCount) internal {
@@ -111,20 +115,21 @@ contract Race is usingOraclize{
             carsPower.push(10000);
             carUpgradePurchased.push(0);
         }
+        allCarsPower = getAllCarsPower();
     }
 
     function initUpgrades() internal {
         //upgrade 1
-        upgradesPower.push(300);
+        upgradesPower.push(1000);
         upgradesPrice.push(10 finney);
 
         //upgrade 2
-        upgradesPower.push(400);
-        upgradesPrice.push(15 finney);
+        upgradesPower.push(4000);
+        upgradesPrice.push(40 finney);
 
         //upgrade 3
-        upgradesPower.push(500);
-        upgradesPrice.push(20 finney);
+        upgradesPower.push(5000);
+        upgradesPrice.push(50 finney);
     }
 
     function getAuctionEndDate() public view returns(uint){
@@ -137,8 +142,8 @@ contract Race is usingOraclize{
 
     function getContractStatus() public view returns(ContractStatus){
         if (contractStoped) return ContractStatus.Stop;
-        //ContractStatus.Initsialising---------------------------------------------------------------------
-        if ((now < auctionEndDate) && !auctionStarted && !auctionEnded) return ContractStatus.Initsialising;
+        //ContractStatus.Initialising---------------------------------------------------------------------
+        if ((now < auctionEndDate) && !auctionStarted && !auctionEnded) return ContractStatus.Initialising;
 
         //ContractStatus.AuctionFault--------------------------------------------------------------------------
         if ((now >= auctionEndDate) && auctionStarted && !auctionEnded)
@@ -205,11 +210,12 @@ contract Race is usingOraclize{
 
     //запуск аукциона, перечесление награды
     function auctionStart()
-        auctionInInitsialising
+        auctionInInitialising
         contractIsNormal
         public
         payable
     {
+        require(msg.value > 0);
         reward = msg.value;
         auctionStarted = true;
         AuctionStarted(reward);
@@ -329,21 +335,27 @@ contract Race is usingOraclize{
         payable
     {
         require(!raceFinished);
+        require(msg.value == getOraclizePrice());
         uint N = 7;
-        uint delay = 0;
-        uint callbackGas = 250000;
-        oraclize_newRandomDSQuery(delay, N, callbackGas);
+        uint delay = 1;
+        allCarsPower = getAllCarsPower();
+        AllCarsPower(allCarsPower);
+        oraclize_newRandomDSQuery(delay, N, CUSTOM_GASLIMIT);
+    }
+
+    function getOraclizePrice() public view returns (uint){
+        return oraclize_getPrice("random", CUSTOM_GASLIMIT);
     }
 
     function __callback(bytes32 _queryId, string _result, bytes _proof) public
     { 
+        require(raceFinished == false);
         require(msg.sender == oraclize_cbAddress());
         
         if (oraclize_randomDS_proofVerify__returnCode(_queryId, _result, _proof) != 0) {
-            // the proof verification has failed, do we need to take any action here? (depends on the use case)
+            ProofError();
         } else {
-            uint maxRange = getAllCarsPower(); 
-            randomNumber = uint(sha3(_result)) % maxRange;
+            randomNumber = uint(sha3(_result)) % allCarsPower;
             winner = getWinnerCar(randomNumber);
             pendingReturns[highestBidders[winner]] = pendingReturns[highestBidders[winner]].add(reward);
             reward = 0;
@@ -352,7 +364,7 @@ contract Race is usingOraclize{
         }
     }
 
-    function getAllCarsPower() internal view returns(uint){
+    function getAllCarsPower() public view returns(uint){
         uint power = 0;
         for (uint i = 0; i < maxCar; i++){
             power = power.add(carsPower[i]);
@@ -366,6 +378,19 @@ contract Race is usingOraclize{
             if (random <= buf) return i;
         }
         return 1000;
+    }
+
+    function reset()
+        public
+    {
+        require(raceFinished);
+        require(msg.sender == owner);
+        if (this.balance > 0) {
+            if (msg.sender.send(this.balance)) {
+                contractStoped = true;
+            }
+        }
+        else contractStoped = true;
     }
 } 
 
