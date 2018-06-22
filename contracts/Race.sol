@@ -51,7 +51,7 @@ contract Race is usingOraclize{
     event AuctionEnded(); // событие об успешном завершении аукциона
     event AuctionStarted(uint256 reward); // событие о начале аукциона
     event AuctionCanceled();
-    event Winer(uint winner, uint random, string oricalize_random);
+    event Winer(uint winner, uint random);
     event AllCarsPower(uint allCarsPower);
     event ProofError();
 //MODIFER---------------------------------------------------------------------  
